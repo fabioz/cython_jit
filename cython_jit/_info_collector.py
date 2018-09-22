@@ -91,10 +91,11 @@ class Collector(object):
         for arg in self._sig.parameters:
             args.append('%s %s' % (self._get_arg_type(arg), arg))
 
-        return 'cdef %(ret_type)s %(func_name)s(%(args)s):\n' % (dict(
+        return 'cdef %(ret_type)s %(func_name)s(%(args)s)%(nogil)s:\n' % (dict(
             ret_type=self.get_cython_ret_type(),
             func_name=self.func.__name__,
             args=', '.join(args),
+            nogil=' nogil' if self.nogil else ''
             ))
 
     def _translate_type(self, arg_type):

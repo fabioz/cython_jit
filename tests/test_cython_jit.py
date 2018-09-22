@@ -8,7 +8,7 @@ def my_func(bar: 'int'):
     return bar + 1
 
 
-@jit(nogil=True)
+@jit(nogil=False)
 def my_func2(bar):
     return bar + 1
 
@@ -16,7 +16,7 @@ def my_func2(bar):
 @pytest.mark.parametrize('func, expected', [
     [my_func,
         [
-            'cdef int64_t my_func(int bar):',
+            'cdef int64_t my_func(int bar) nogil:',
             '    return bar + 1'
         ]
     ],
