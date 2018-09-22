@@ -35,3 +35,10 @@ def test_cython_jit(func, expected):
     cython_generator = CythonGenerator()
     cython_generator.generate(all_collectors[func.__name__])
     assert [x.rstrip() for x in cython_generator.lines if x.strip()] == expected
+
+
+def test_compile_with_cython(tmpdir):
+    temp_dir = tmpdir.join('temp')
+    build_dir = tmpdir.join('build')
+    from cython_jit.compile_with_cython import compile_with_cython
+    compile_with_cython('def func():\n    return 1\n\n', temp_dir, build_dir)
