@@ -11,6 +11,7 @@ class Collector(object):
         import io
         import hashlib
         import inspect
+        self._c_imports = set()
 
         assert func.__name__ not in all_collectors, 'There is already a function named: %s' % (
             func.__name__,)
@@ -91,17 +92,41 @@ class Collector(object):
         for arg in self._sig.parameters:
             args.append('%s %s' % (self._get_arg_type(arg), arg))
 
-        return 'cdef %(ret_type)s %(func_name)s(%(args)s)%(nogil)s:\n' % (dict(
+        return 'cdef %(ret_type)s %(func_name)s(%(args)s)%(nogil)s:' % (dict(
             ret_type=self.get_cython_ret_type(),
             func_name=self.func.__name__,
             args=', '.join(args),
             nogil=' nogil' if self.nogil else ''
             ))
 
+    def get_wrapper_func_lines(self):
+        call_args = []
+        args = []
+        for arg in self._sig.parameters:
+            args.append('%s %s' % (self._get_arg_type(arg), arg))
+            call_args.append(arg)
+
+        d = dict(
+            ret_type=self.get_cython_ret_type(),
+            func_name=self.func.__name__,
+            args=', '.join(args),
+            call_args=', '.join(call_args),
+        )
+        def_line = 'def %(func_name)s_cy_wrapper(%(args)s) -> %(ret_type)s:' % (d)
+
+        return [def_line, '    return %(func_name)s(%(call_args)s)' % d]
+
+    def get_c_import_lines(self):
+        return sorted(self._c_imports)
+
     def _translate_type(self, arg_type):
         if arg_type == int:
-            return 'int64_t'
-        raise AssertionError('Unhandled: %s' % (arg_type,))
+            ret = 'int64_t'
+        else:
+            raise AssertionError('Unhandled: %s' % (arg_type,))
+
+        self._c_imports.add('from libc.stdint cimport %s' % (ret,))
+        return ret
 
     def get_cython_ret_type(self):
         return self._translate_type(self._return_type)
