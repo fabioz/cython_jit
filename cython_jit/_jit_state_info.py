@@ -1,3 +1,14 @@
+from contextlib import contextmanager
+
+
+@contextmanager
+def add_to_sys_path(directory):
+    import sys
+    sys.path.insert(0, directory)
+    try:
+        yield
+    finally:
+        sys.path.remove(directory)
 
 
 class _JitStateInfo:
@@ -33,14 +44,12 @@ class _JitStateInfo:
         '''
         :param CythonJitInfoCollector collector:
         '''
-        from cython_jit import JitStage
-        if self.stage in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
-            pyd_name = collector.func.__module__
-            print(pyd_name)
+        import importlib
+        pyd_name = collector.func.replace('.', '_') + 'cyjit'
+        cache_dir = self.get_dir('cache')
+
+        raise AssertionError('todo')
+        with add_to_sys_path(cache_dir):
+            importlib.import_module(pyd_name)
             collector.key
             collector.func
-            raise AssertionError('todo')
-        elif self.stage == (JitStage.use_compiled):
-            raise AssertionError('todo')
-        else:
-            raise AssertionError('Unexpected stage: %s' % (self.stage,))

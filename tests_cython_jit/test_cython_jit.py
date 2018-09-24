@@ -37,6 +37,7 @@ def test_cython_jit(func, expected, tmpdir):
     from cython_jit._info_collector import all_collectors
     from cython_jit.cython_generator import CythonGenerator
     from cython_jit.compile_with_cython import compile_with_cython
+    from cython_jit._jit_state_info import add_to_sys_path
 
     # When calling the function the info is collected.
     assert func(1) == 2
@@ -84,6 +85,8 @@ def test_cache_working(tmpdir):
 
 def test_compile_with_cython(tmpdir):
     from cython_jit.compile_with_cython import compile_with_cython
+    from cython_jit._jit_state_info import add_to_sys_path
+
     target_dir = str(tmpdir.join('target_dir'))
     compile_with_cython(
         'mymod1',
@@ -99,12 +102,3 @@ def test_compile_with_cython(tmpdir):
         import mymod1  # @UnresolvedImport @Reimport
     assert mymod1.func() == 1
 
-
-@contextmanager
-def add_to_sys_path(directory):
-    import sys
-    sys.path.insert(0, directory)
-    try:
-        yield
-    finally:
-        sys.path.remove(directory)
