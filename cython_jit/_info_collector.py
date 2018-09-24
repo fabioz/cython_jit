@@ -1,12 +1,11 @@
 from collections import namedtuple
+
 from cython_jit import JitStage
 
 
 def get_line_indent(line):
     return len(line) - len(line.lstrip())
 
-
-all_collectors = {}
 
 _GeneratedInfo = namedtuple('_GeneratedInfo', 'func_lines, c_import_lines')
 
@@ -17,8 +16,10 @@ class CythonJitInfoCollector(object):
         import io
         import hashlib
         import inspect
+        from cython_jit._jit_state_info import _get_jit_state_info
         self._c_imports = set()
 
+        all_collectors = _get_jit_state_info().all_collectors
         assert func.__name__ not in all_collectors, 'There is already a function named: %s' % (
             func.__name__,)
 

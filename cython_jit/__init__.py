@@ -3,6 +3,10 @@ import enum
 from functools import wraps
 
 
+class ModuleNotCachedError(Exception):
+    pass
+
+
 class JitStage(enum.Enum):
 
     # This mode will not really jit, it'll collect all information needed
@@ -18,21 +22,6 @@ class JitStage(enum.Enum):
     collect_info = 2
 
 
-def _get_jit_state_info():
-    try:
-        # Store the 'global' info on the function (created on demand).
-        return _get_jit_state_info._jit_state_info
-    except AttributeError:
-        from cython_jit._jit_state_info import _JitStateInfo
-        _get_jit_state_info._jit_state_info = _JitStateInfo()
-
-        def _compile_collected():
-            pass
-
-        atexit.register(_compile_collected)
-    return _get_jit_state_info._jit_state_info
-
-
 class _RestoreState(object):
 
     def __init__(self, state_to_restore):
@@ -42,16 +31,25 @@ class _RestoreState(object):
         pass
 
     def __exit__(self, *args, **kwargs):
+        from cython_jit._jit_state_info import _get_jit_state_info
         _get_jit_state_info().stage = self.state_to_restore
 
 
 def set_jit_stage(jit_stage):
+    '''
+    :note: may be used as a context-manager which restores the previous state.
+        i.e.:
+        with set_jit_stage(JitStage.collect_info):
+            ...
+    '''
+    from cython_jit._jit_state_info import _get_jit_state_info
     prev = _get_jit_state_info().stage
     _get_jit_state_info().stage = jit_stage
     return _RestoreState(prev)
 
 
 def get_jit_stage():
+    from cython_jit._jit_state_info import _get_jit_state_info
     return _get_jit_state_info().stage
 
 
@@ -59,10 +57,12 @@ def set_cache_dir(directory):
     '''
     The directory where the caches will be stored.
     '''
+    from cython_jit._jit_state_info import _get_jit_state_info
     _get_jit_state_info().set_dir('cache', directory)
 
 
 def get_cache_dir():
+    from cython_jit._jit_state_info import _get_jit_state_info
     return _get_jit_state_info().get_dir('cache')
 
 
@@ -70,15 +70,17 @@ def set_temp_dir(directory):
     '''
     The directory where the temp files will be stored.
     '''
+    from cython_jit._jit_state_info import _get_jit_state_info
     _get_jit_state_info().set_dir('temp', directory)
 
 
 def get_temp_dir():
+    from cython_jit._jit_state_info import _get_jit_state_info
     return _get_jit_state_info().get_dir('temp')
 
 
 def jit(nogil=False):
-
+    from cython_jit._jit_state_info import _get_jit_state_info
     stage = get_jit_stage()
     jit_state_info = _get_jit_state_info()
     if stage in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
@@ -107,11 +109,10 @@ def jit(nogil=False):
 
             cached = jit_state_info.get_cached(collector)
             if cached is None:
-                raise RuntimeError('Unable to find cython-compiled module for: %s' % (func,))
+                raise ModuleNotCachedError('Unable to find cython-compiled module for: %s' % (func,))
             return cached
 
         return method
 
     else:
         raise AssertionError('TODO')
-

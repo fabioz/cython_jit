@@ -1,16 +1,32 @@
-from contextlib import contextmanager
 
 import pytest
-from cython_jit import set_jit_stage, JitStage
+
+from cython_jit import JitStage, set_jit_stage
 
 with set_jit_stage(JitStage.collect_info):
     from tests_cython_jit._to_cython import my_func, my_func2
 
 
 @pytest.fixture(scope='function', autouse=True)
+def _set_new_state_info():
+    '''
+    Each test gets a new state info.
+    '''
+    from cython_jit._jit_state_info import _set_jit_state_info
+    from cython_jit._jit_state_info import _JitStateInfo
+
+    jit_state_info = _JitStateInfo()
+    with _set_jit_state_info(jit_state_info):
+        yield
+
+
+@pytest.fixture(scope='function', autouse=True)
 def _auto_pop_module1():
+    '''
+
+    '''
     import sys
-    sys.modules.pop('mymod1', None)
+    sys.modules.pop('mymod1_cython_tests', None)
 
 
 @pytest.mark.parametrize('func, expected', [
@@ -34,10 +50,12 @@ def _auto_pop_module1():
     ],
 ])
 def test_cython_jit(func, expected, tmpdir):
-    from cython_jit._info_collector import all_collectors
     from cython_jit.cython_generator import CythonGenerator
     from cython_jit.compile_with_cython import compile_with_cython
     from cython_jit._jit_state_info import add_to_sys_path
+    from cython_jit._jit_state_info import _get_jit_state_info
+
+    all_collectors = _get_jit_state_info().all_collectors
 
     # When calling the function the info is collected.
     assert func(1) == 2
@@ -50,7 +68,7 @@ def test_cython_jit(func, expected, tmpdir):
     contents = '\n'.join(generated_info.c_import_lines) + '\n' + '\n'.join(generated_info.func_lines)
     contents = contents.replace('bar + 1', 'bar + 2')  # To differentiate which version we're calling
     compile_with_cython(
-        'mymod1',
+        'mymod1_cython_tests',
         contents,
         str(tmpdir),
         target_dir,
@@ -58,8 +76,8 @@ def test_cython_jit(func, expected, tmpdir):
     )
 
     with add_to_sys_path(target_dir):
-        import mymod1  # @UnresolvedImport @Reimport
-        new_func = getattr(mymod1, func.__name__ + '_cy_wrapper')
+        import mymod1_cython_tests  # @UnresolvedImport @Reimport
+        new_func = getattr(mymod1_cython_tests, func.__name__ + '_cy_wrapper')
 
     assert new_func(1) == 3
 
@@ -71,15 +89,24 @@ def test_cython_jit(func, expected, tmpdir):
 
 def test_cache_working(tmpdir):
     from importlib import reload
-    from cython_jit._info_collector import all_collectors
 
+    from cython_jit import ModuleNotCachedError
+    from cython_jit._jit_state_info import _get_jit_state_info
+
+    all_collectors = _get_jit_state_info().all_collectors
     with set_jit_stage(JitStage.collect_info):
         from tests_cython_jit import _to_cython2
     _to_cython2.my_func3(1)
 
     del all_collectors['my_func3']
     with set_jit_stage(JitStage.use_compiled):
-        _to_cython2_reloaded = reload(_to_cython2)
+        with pytest.raises(ModuleNotCachedError):
+            reload(_to_cython2)
+
+    _get_jit_state_info().compile_collected()
+    del all_collectors['my_func3']
+
+    _to_cython2_reloaded = reload(_to_cython2)
     _to_cython2_reloaded.my_func3(1)
 
 
@@ -89,16 +116,15 @@ def test_compile_with_cython(tmpdir):
 
     target_dir = str(tmpdir.join('target_dir'))
     compile_with_cython(
-        'mymod1',
+        'mymod1_cython_tests',
         'def func():\n    return 1\n\n',
         str(tmpdir),
         target_dir,
         silent=True,
     )
     with pytest.raises(ImportError):
-        import mymod1  # @UnresolvedImport @UnusedImport
+        import mymod1_cython_tests  # @UnresolvedImport @UnusedImport
 
     with add_to_sys_path(target_dir):
-        import mymod1  # @UnresolvedImport @Reimport
-    assert mymod1.func() == 1
-
+        import mymod1_cython_tests  # @UnresolvedImport @Reimport
+    assert mymod1_cython_tests.func() == 1
