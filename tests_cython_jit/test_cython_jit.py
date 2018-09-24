@@ -3,9 +3,6 @@ import pytest
 
 from cython_jit import JitStage, set_jit_stage
 
-with set_jit_stage(JitStage.collect_info):
-    from tests_cython_jit._to_cython import my_func, my_func2
-
 
 @pytest.fixture(scope='function', autouse=True)
 def _set_new_state_info():
@@ -29,31 +26,38 @@ def _auto_pop_module1():
     sys.modules.pop('mymod1_cython_tests', None)
 
 
-@pytest.mark.parametrize('func, expected', [
-    [my_func,
-        [
-            'def my_func_cy_wrapper(int bar) -> int64_t:',
-            '    return my_func(bar)',
+def test_cython_jit(tmpdir):
+    with set_jit_stage(JitStage.collect_info):
+        from tests_cython_jit._to_cython import my_func, my_func2
 
-            'cdef int64_t my_func(int bar) nogil:',
-            '    return bar + 1'
-        ]
-    ],
-    [my_func2,
-        [
-            'def my_func2_cy_wrapper(int64_t bar) -> int64_t:',
-            '    return my_func2(bar)',
+        for func, expected in [
+            (my_func,
+                [
+                    'def my_func_cy_wrapper(int bar) -> int64_t:',
+                    '    return my_func(bar)',
 
-            'cdef int64_t my_func2(int64_t bar):',
-            '    return bar + 1'
-        ]
-    ],
-])
-def test_cython_jit(func, expected, tmpdir):
+                    'cdef int64_t my_func(int bar) nogil:',
+                    '    return bar + 1'
+                ]
+            ),
+            (my_func2,
+                [
+                    'def my_func2_cy_wrapper(int64_t bar) -> int64_t:',
+                    '    return my_func2(bar)',
+
+                    'cdef int64_t my_func2(int64_t bar):',
+                    '    return bar + 1'
+                ]
+            )]:
+            _check_cython_jit(func, expected, tmpdir.join(func.__name__))
+
+
+def _check_cython_jit(func, expected, tmpdir):
     from cython_jit.cython_generator import CythonGenerator
     from cython_jit.compile_with_cython import compile_with_cython
     from cython_jit._jit_state_info import add_to_sys_path
     from cython_jit._jit_state_info import _get_jit_state_info
+    import sys
 
     all_collectors = _get_jit_state_info().all_collectors
 
@@ -86,6 +90,10 @@ def test_cython_jit(func, expected, tmpdir):
     cython_generator.temp_dir = str(tmpdir.join('cython_jit'))
     assert cython_generator.temp_dir.exists()
 
+    del new_func
+    del mymod1_cython_tests
+    del sys.modules['mymod1_cython_tests']
+
 
 def test_cache_working(tmpdir):
     from importlib import reload
@@ -93,21 +101,30 @@ def test_cache_working(tmpdir):
     from cython_jit import ModuleNotCachedError
     from cython_jit._jit_state_info import _get_jit_state_info
 
+    # Only collect (and erase) info
     all_collectors = _get_jit_state_info().all_collectors
     with set_jit_stage(JitStage.collect_info):
         from tests_cython_jit import _to_cython2
-    _to_cython2.my_func3(1)
-
+        _to_cython2.my_func3(1)
     del all_collectors['my_func3']
+
+    # Check that cache is still not there
     with set_jit_stage(JitStage.use_compiled):
         with pytest.raises(ModuleNotCachedError):
             reload(_to_cython2)
-
-    _get_jit_state_info().compile_collected()
     del all_collectors['my_func3']
 
-    _to_cython2_reloaded = reload(_to_cython2)
-    _to_cython2_reloaded.my_func3(1)
+    # Properly compile it now.
+    with set_jit_stage(JitStage.collect_info):
+        reload(_to_cython2)
+        _to_cython2.my_func3(1)
+        _get_jit_state_info().compile_collected()
+    del all_collectors['my_func3']
+
+    # Use compiled version.
+    with set_jit_stage(JitStage.use_compiled):
+        _to_cython2_reloaded = reload(_to_cython2)
+        _to_cython2_reloaded.my_func3(1)
 
 
 def test_compile_with_cython(tmpdir):

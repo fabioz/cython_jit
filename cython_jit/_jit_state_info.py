@@ -1,4 +1,3 @@
-import atexit
 from contextlib import contextmanager
 
 
@@ -18,7 +17,6 @@ class _JitStateInfo:
         from cython_jit import JitStage
         self.stage = JitStage.use_compiled
         self._dirs = {}
-        self.collected = False
         self.all_collectors = {}
 
     def set_dir(self, dir_type, directory):
@@ -47,7 +45,7 @@ class _JitStateInfo:
         :param CythonJitInfoCollector collector:
         '''
         import importlib
-        pyd_name = collector.func.__module__.replace('.', '_') + 'cyjit'
+        pyd_name = collector.get_pyd_name()
         cache_dir = self.get_dir('cache')
 
         with add_to_sys_path(cache_dir):
@@ -60,7 +58,34 @@ class _JitStateInfo:
             collector.func
 
     def compile_collected(self):
-        pass
+        from collections import defaultdict
+        from pathlib import Path
+        pyd_name_to_collectors = defaultdict(list)
+        for collector in self.all_collectors.values():
+            if collector.collected_info:
+                pyd_name = collector.get_pyd_name()
+                pyd_name_to_collectors[pyd_name].append(collector)
+
+        for pyd_name, collectors in pyd_name_to_collectors.items():
+            first_collector = next(iter(collectors))
+            filepath = Path(first_collector.func.__code__.co_filename)
+
+            if not filepath.exists():
+                raise RuntimeError('Expected: %s to exist.' % (filepath,))
+
+            with filepath.open() as stream:
+                original_lines = stream.readlines()
+
+            collectors = sorted(
+                collectors, key=lambda collector:-collector.func_first_line)
+
+            infos_to_apply = []
+            for collector in collectors:
+                infos_to_apply.append(collector.generate())
+
+            for info_to_apply in infos_to_apply:
+                print('here')
+        raise AssertionError('todo')
 
 
 def _get_jit_state_info():
@@ -71,9 +96,8 @@ def _get_jit_state_info():
         # Store the 'global' info on the function (created on demand).
         return _get_jit_state_info._jit_state_info
     except AttributeError:
-        jit_state_info = _get_jit_state_info._jit_state_info = _JitStateInfo()
+        _get_jit_state_info._jit_state_info = _JitStateInfo()
 
-        atexit.register(jit_state_info.compile_collected)
     return _get_jit_state_info._jit_state_info
 
 

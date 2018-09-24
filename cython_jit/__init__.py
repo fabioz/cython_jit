@@ -94,7 +94,6 @@ def jit(nogil=False):
                 collector.collect_args(args, kwargs)
                 ret = func(*args, **kwargs)
                 collector.collect_return(ret)
-                jit_state_info.collected = True
                 return ret
 
             return actual_method

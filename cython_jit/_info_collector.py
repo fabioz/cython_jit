@@ -1,4 +1,5 @@
 from collections import namedtuple
+from contextlib import contextmanager
 
 from cython_jit import JitStage
 
@@ -13,7 +14,6 @@ _GeneratedInfo = namedtuple('_GeneratedInfo', 'func_lines, c_import_lines')
 class CythonJitInfoCollector(object):
 
     def __init__(self, func, nogil, jit_stage):
-        import io
         import hashlib
         import inspect
         from cython_jit._jit_state_info import _get_jit_state_info
@@ -42,9 +42,15 @@ class CythonJitInfoCollector(object):
 
         if jit_stage in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
             func_lines = []
-            with io.open(func.__code__.co_filename, 'r') as stream:
+            func_first_line = self.func_first_line
+            with self.file_stream() as stream:
                 start_indent = None
-                for i_line, line in enumerate(stream.readlines()):
+
+                lines = stream.readlines()
+                func_lines.append(lines[func_first_line])
+                start_indent = get_line_indent(func_lines[-1])
+
+                for i_line, line in enumerate(lines[func_first_line + 1:]):
                     if start_indent is not None:
                         if line.strip():
                             if get_line_indent(line) <= start_indent:
@@ -52,13 +58,31 @@ class CythonJitInfoCollector(object):
 
                         func_lines.append(line)
 
-                    elif i_line == func.__code__.co_firstlineno:
-                        func_lines.append(line)
-                        start_indent = get_line_indent(line)
+            self._last_line = i_line
 
             assert func_lines
             self._func_lines = tuple(func_lines)
             self._return_type = 'NOT_COLLECTED'
+
+    @property
+    def func_first_line(self):
+        return self.func.__code__.co_firstlineno
+
+    @property
+    def func_last_line(self):
+        return self._last_line
+
+    @contextmanager
+    def file_stream(self, mode='r'):
+        import io
+        with io.open(self.func.__code__.co_filename, mode) as stream:
+            yield stream
+
+    def collected_info(self):
+        return self._return_type != 'NOT COLLECTED'
+
+    def get_pyd_name(self):
+        return self.func.__module__.replace('.', '_') + 'cyjit'
 
     def _check_jit_stage_collect(self):
         if self._jit_stage not in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
