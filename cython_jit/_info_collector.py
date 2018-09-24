@@ -1,11 +1,16 @@
+from collections import namedtuple
+
+
 def get_line_indent(line):
     return len(line) - len(line.lstrip())
 
 
 all_collectors = {}
 
+_GeneratedInfo = namedtuple('_GeneratedInfo', 'func_lines, c_import_lines')
 
-class Collector(object):
+
+class CythonJitInfoCollector(object):
 
     def __init__(self, func, nogil):
         import io
@@ -48,6 +53,23 @@ class Collector(object):
         assert func_lines
         self._func_lines = tuple(func_lines)
         self._return_type = 'NOT_COLLECTED'
+
+    def generate(self):
+        generated_func_lines = []
+        generated_c_import_lines = set()
+
+        def_line = self.func_lines[0].strip()
+        assert def_line.endswith(':'), \
+            'Can currently only support function where def starts and ends in same line. Found: %s' % (def_line,)
+        assert def_line.startswith('def '), \
+            'Expected line: %s to start with def.' % (def_line,)
+
+        generated_func_lines.extend(self.get_wrapper_func_lines())
+        generated_func_lines.append(self.get_def_line())
+        generated_func_lines.extend(self.func_lines[1:])
+
+        generated_c_import_lines.update(self.get_c_import_lines())
+        return _GeneratedInfo(generated_func_lines, generated_c_import_lines)
 
     @property
     def func_lines(self):

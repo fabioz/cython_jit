@@ -9,7 +9,7 @@ def jit(nogil=False):
 
         def method(func):
             from cython_jit import _info_collector
-            collector = _info_collector.Collector(func, nogil=nogil)
+            collector = _info_collector.CythonJitInfoCollector(func, nogil=nogil)
 
             @wraps(func)
             def actual_method(*args, **kwargs):

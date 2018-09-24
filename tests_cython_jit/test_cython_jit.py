@@ -2,17 +2,7 @@ from contextlib import contextmanager
 
 import pytest
 
-from cython_jit import jit
-
-
-@jit(nogil=True)
-def my_func(bar: 'int'):
-    return bar + 1
-
-
-@jit(nogil=False)
-def my_func2(bar):
-    return bar + 1
+from tests_cython_jit._to_cython import my_func, my_func2
 
 
 @pytest.fixture(scope='function', autouse=True)
@@ -49,18 +39,16 @@ def test_cython_jit(func, expected, tmpdir):
     # When calling the function the info is collected.
     assert func(1) == 2
 
-    cython_generator = CythonGenerator()
-    cython_generator.generate(all_collectors[func.__name__])
-    assert [x.rstrip() for x in cython_generator.func_lines if x.strip()] == expected
-
-    assert cython_generator.temp_dir.exists()
-    cython_generator.temp_dir = str(tmpdir.join('cython_jit'))
-    assert cython_generator.temp_dir.exists()
+    collector = all_collectors[func.__name__]  # : :type collector: CythonJitInfoCollector
+    generated_info = collector.generate()
+    assert [x.rstrip() for x in generated_info.func_lines if x.strip()] == expected
 
     target_dir = str(tmpdir.join('target_dir'))
+    contents = '\n'.join(generated_info.c_import_lines) + '\n' + '\n'.join(generated_info.func_lines)
+    contents = contents.replace('bar + 1', 'bar + 2')  # To differentiate which version we're calling
     compile_with_cython(
         'mymod1',
-        '\n'.join(cython_generator.c_import_lines) + '\n' + '\n'.join(cython_generator.func_lines),
+        contents,
         str(tmpdir),
         target_dir,
         silent=True,
@@ -70,12 +58,16 @@ def test_cython_jit(func, expected, tmpdir):
         import mymod1  # @UnresolvedImport @Reimport
         new_func = getattr(mymod1, func.__name__ + '_cy_wrapper')
 
-    assert new_func(1) == 2
+    assert new_func(1) == 3
+
+    cython_generator = CythonGenerator()
+    assert cython_generator.temp_dir.exists()
+    cython_generator.temp_dir = str(tmpdir.join('cython_jit'))
+    assert cython_generator.temp_dir.exists()
 
 
 def test_compile_with_cython(tmpdir):
     from cython_jit.compile_with_cython import compile_with_cython
-    import sys
     target_dir = str(tmpdir.join('target_dir'))
     compile_with_cython(
         'mymod1',
