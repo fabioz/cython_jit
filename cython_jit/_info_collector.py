@@ -13,6 +13,8 @@ _GeneratedInfo = namedtuple('_GeneratedInfo', 'func_lines, c_import_lines')
 
 class CythonJitInfoCollector(object):
 
+    RETURN_NOT_COLLECTED = 'RETURN_NOT_COLLECTED'
+
     def __init__(self, func, nogil, jit_stage):
         import hashlib
         import inspect
@@ -58,11 +60,11 @@ class CythonJitInfoCollector(object):
 
                         func_lines.append(line)
 
-            self._last_line = i_line
+            self._last_line = i_line + func_first_line + 1
 
             assert func_lines
             self._func_lines = tuple(func_lines)
-            self._return_type = 'NOT_COLLECTED'
+            self._return_type = self.RETURN_NOT_COLLECTED
 
     @property
     def func_first_line(self):
@@ -79,7 +81,7 @@ class CythonJitInfoCollector(object):
             yield stream
 
     def collected_info(self):
-        return self._return_type != 'NOT COLLECTED'
+        return self._return_type != self.RETURN_NOT_COLLECTED
 
     def get_pyd_name(self):
         return self.func.__module__.replace('.', '_') + 'cyjit'
@@ -90,6 +92,9 @@ class CythonJitInfoCollector(object):
 
     def generate(self):
         self._check_jit_stage_collect()
+        if not self.collected_info():
+            raise RuntimeError('No info was collected for: %s' % (self.func))
+
         generated_func_lines = []
         generated_c_import_lines = set()
 
@@ -101,7 +106,7 @@ class CythonJitInfoCollector(object):
 
         generated_func_lines.extend(self.get_wrapper_func_lines())
         generated_func_lines.append(self.get_def_line())
-        generated_func_lines.extend(self.func_lines[1:])
+        generated_func_lines.extend((x.rstrip() for x in self.func_lines[1:]))
 
         generated_c_import_lines.update(self.get_c_import_lines())
         return _GeneratedInfo(generated_func_lines, generated_c_import_lines)

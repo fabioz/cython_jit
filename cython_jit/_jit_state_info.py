@@ -74,17 +74,29 @@ class _JitStateInfo:
                 raise RuntimeError('Expected: %s to exist.' % (filepath,))
 
             with filepath.open() as stream:
-                original_lines = stream.readlines()
+                original_lines = [x.rstrip() for x in stream.readlines()]
 
+            # We must apply bottom to top so that lines are correct.
             collectors = sorted(
                 collectors, key=lambda collector:-collector.func_first_line)
 
-            infos_to_apply = []
+            import_lines = set()
             for collector in collectors:
-                infos_to_apply.append(collector.generate())
+                info_to_apply = collector.generate()
 
-            for info_to_apply in infos_to_apply:
-                print('here')
+                # Remove decorators too
+                func_first_line = collector.func_first_line
+                print('func_first_line', func_first_line)
+                while original_lines[func_first_line].startswith('def') or original_lines[func_first_line].startswith('@'):
+                    func_first_line -= 1
+
+                original_lines[func_first_line:collector.func_last_line] = info_to_apply.func_lines
+                import_lines.update(info_to_apply.c_import_lines)
+
+            original_lines = sorted(import_lines) + original_lines
+
+            print('\n'.join(original_lines))
+
         raise AssertionError('todo')
 
 

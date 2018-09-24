@@ -106,20 +106,21 @@ def test_cache_working(tmpdir):
     with set_jit_stage(JitStage.collect_info):
         from tests_cython_jit import _to_cython2
         _to_cython2.my_func3(1)
-    del all_collectors['my_func3']
+    all_collectors.clear()
 
     # Check that cache is still not there
     with set_jit_stage(JitStage.use_compiled):
         with pytest.raises(ModuleNotCachedError):
             reload(_to_cython2)
-    del all_collectors['my_func3']
+    all_collectors.clear()
 
     # Properly compile it now.
     with set_jit_stage(JitStage.collect_info):
         reload(_to_cython2)
         _to_cython2.my_func3(1)
+        _to_cython2.my_func4(1)
         _get_jit_state_info().compile_collected()
-    del all_collectors['my_func3']
+    all_collectors.clear()
 
     # Use compiled version.
     with set_jit_stage(JitStage.use_compiled):
