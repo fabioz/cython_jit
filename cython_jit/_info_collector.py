@@ -1,4 +1,5 @@
 from collections import namedtuple
+from cython_jit import JitStage
 
 
 def get_line_indent(line):
@@ -12,7 +13,7 @@ _GeneratedInfo = namedtuple('_GeneratedInfo', 'func_lines, c_import_lines')
 
 class CythonJitInfoCollector(object):
 
-    def __init__(self, func, nogil):
+    def __init__(self, func, nogil, jit_stage):
         import io
         import hashlib
         import inspect
@@ -30,31 +31,40 @@ class CythonJitInfoCollector(object):
         m.update(func.__code__.co_code)
         self._sig = inspect.signature(func)
         m.update(str(self._sig).encode('utf-8'))
+        if nogil:
+            m.update(b'nogil')
         key = m.hexdigest()
 
         # If the key is not the same the function must be recompiled.
         self._key = key
+        self._jit_stage = jit_stage
 
-        func_lines = []
-        with io.open(func.__code__.co_filename, 'r') as stream:
-            start_indent = None
-            for i_line, line in enumerate(stream.readlines()):
-                if start_indent is not None:
-                    if line.strip():
-                        if get_line_indent(line) <= start_indent:
-                            break
+        if jit_stage in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
+            func_lines = []
+            with io.open(func.__code__.co_filename, 'r') as stream:
+                start_indent = None
+                for i_line, line in enumerate(stream.readlines()):
+                    if start_indent is not None:
+                        if line.strip():
+                            if get_line_indent(line) <= start_indent:
+                                break
 
-                    func_lines.append(line)
+                        func_lines.append(line)
 
-                elif i_line == func.__code__.co_firstlineno:
-                    func_lines.append(line)
-                    start_indent = get_line_indent(line)
+                    elif i_line == func.__code__.co_firstlineno:
+                        func_lines.append(line)
+                        start_indent = get_line_indent(line)
 
-        assert func_lines
-        self._func_lines = tuple(func_lines)
-        self._return_type = 'NOT_COLLECTED'
+            assert func_lines
+            self._func_lines = tuple(func_lines)
+            self._return_type = 'NOT_COLLECTED'
+
+    def _check_jit_stage_collect(self):
+        if self._jit_stage not in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
+            raise AssertionError('Should only be called at collect time.')
 
     def generate(self):
+        self._check_jit_stage_collect()
         generated_func_lines = []
         generated_c_import_lines = set()
 
@@ -73,10 +83,12 @@ class CythonJitInfoCollector(object):
 
     @property
     def func_lines(self):
+        self._check_jit_stage_collect()
         return self._func_lines
 
     @property
     def func_contents(self):
+        self._check_jit_stage_collect()
         return ''.join(self._func_lines)
 
     @property
@@ -92,6 +104,7 @@ class CythonJitInfoCollector(object):
         return self._key
 
     def collect_args(self, args, kwargs):
+        self._check_jit_stage_collect()
         bound_arguments = self._sig.bind(*args, **kwargs)
         for arg_name, arg_value in bound_arguments.arguments.items():
             self._collect_arg(arg_name, arg_value)
@@ -100,6 +113,7 @@ class CythonJitInfoCollector(object):
         self._arg_name_to_arg_type[arg_name] = type(arg_value)
 
     def collect_return(self, ret):
+        self._check_jit_stage_collect()
         self._return_type = type(ret)
 
     def _get_arg_type(self, arg_name):
@@ -110,6 +124,7 @@ class CythonJitInfoCollector(object):
         return self._translate_type(arg_type)
 
     def get_def_line(self):
+        self._check_jit_stage_collect()
         args = []
         for arg in self._sig.parameters:
             args.append('%s %s' % (self._get_arg_type(arg), arg))
@@ -122,6 +137,7 @@ class CythonJitInfoCollector(object):
             ))
 
     def get_wrapper_func_lines(self):
+        self._check_jit_stage_collect()
         call_args = []
         args = []
         for arg in self._sig.parameters:
@@ -139,6 +155,7 @@ class CythonJitInfoCollector(object):
         return [def_line, '    return %(func_name)s(%(call_args)s)' % d]
 
     def get_c_import_lines(self):
+        self._check_jit_stage_collect()
         return sorted(self._c_imports)
 
     def _translate_type(self, arg_type):
@@ -151,4 +168,5 @@ class CythonJitInfoCollector(object):
         return ret
 
     def get_cython_ret_type(self):
+        self._check_jit_stage_collect()
         return self._translate_type(self._return_type)

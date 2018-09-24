@@ -1,8 +1,10 @@
 from contextlib import contextmanager
 
 import pytest
+from cython_jit import set_jit_stage, JitStage
 
-from tests_cython_jit._to_cython import my_func, my_func2
+with set_jit_stage(JitStage.collect_info):
+    from tests_cython_jit._to_cython import my_func, my_func2
 
 
 @pytest.fixture(scope='function', autouse=True)
