@@ -68,6 +68,20 @@ def test_cython_jit(func, expected, tmpdir):
     assert cython_generator.temp_dir.exists()
 
 
+def test_cache_working(tmpdir):
+    from importlib import reload
+    from cython_jit._info_collector import all_collectors
+
+    with set_jit_stage(JitStage.collect_info):
+        from tests_cython_jit import _to_cython2
+    _to_cython2.my_func3(1)
+
+    del all_collectors['my_func3']
+    with set_jit_stage(JitStage.use_compiled):
+        _to_cython2_reloaded = reload(_to_cython2)
+    _to_cython2_reloaded.my_func3(1)
+
+
 def test_compile_with_cython(tmpdir):
     from cython_jit.compile_with_cython import compile_with_cython
     target_dir = str(tmpdir.join('target_dir'))
