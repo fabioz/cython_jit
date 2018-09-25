@@ -1,7 +1,11 @@
 
+
 import pytest
 
-from cython_jit import JitStage, set_jit_stage
+# Need to investigate: it seems that after compiling we no longer have permissions to removing
+# a file!
+# import os
+# os.remove('C:\\Users\\fabio\\AppData\\Local\\Temp\\cython_jit\\tests_cython_jit__to_cython2_cyjit.cp36-win_amd64.pyd')
 
 
 @pytest.fixture(scope='function', autouse=True)
@@ -27,6 +31,8 @@ def _auto_pop_module1():
 
 
 def test_cython_jit(tmpdir):
+    from cython_jit import JitStage, set_jit_stage
+
     with set_jit_stage(JitStage.collect_info):
         from tests_cython_jit._to_cython import my_func, my_func2
 
@@ -53,7 +59,6 @@ def test_cython_jit(tmpdir):
 
 
 def _check_cython_jit(func, expected, tmpdir):
-    from cython_jit.cython_generator import CythonGenerator
     from cython_jit.compile_with_cython import compile_with_cython
     from cython_jit._jit_state_info import add_to_sys_path
     from cython_jit._jit_state_info import _get_jit_state_info
@@ -85,17 +90,13 @@ def _check_cython_jit(func, expected, tmpdir):
 
     assert new_func(1) == 3
 
-    cython_generator = CythonGenerator()
-    assert cython_generator.temp_dir.exists()
-    cython_generator.temp_dir = str(tmpdir.join('cython_jit'))
-    assert cython_generator.temp_dir.exists()
-
     del new_func
     del mymod1_cython_tests
     del sys.modules['mymod1_cython_tests']
 
 
 def test_cache_working(tmpdir):
+    from cython_jit import JitStage, set_jit_stage
     from importlib import reload
 
     from cython_jit import ModuleNotCachedError
@@ -119,6 +120,16 @@ def test_cache_working(tmpdir):
         reload(_to_cython2)
         _to_cython2.my_func3(1)
         _to_cython2.my_func4(1)
+        _to_cython2.my_func5(1)
+        assert all_collectors['my_func3'].func_first_line == 4
+        assert all_collectors['my_func3'].func_last_line == 7
+
+        assert all_collectors['my_func4'].func_first_line == 9
+        assert all_collectors['my_func4'].func_last_line == 12
+
+        assert all_collectors['my_func5'].func_first_line == 14
+        assert all_collectors['my_func5'].func_last_line == 16
+
         _get_jit_state_info().compile_collected()
     all_collectors.clear()
 

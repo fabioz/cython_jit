@@ -9,3 +9,8 @@ def my_func3(bar):
 @jit(nogil=True)
 def my_func4(bar):
     return bar + 1
+
+
+@jit(nogil=True)
+def my_func5(bar):
+    return bar + 1

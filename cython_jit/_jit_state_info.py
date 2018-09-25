@@ -3,6 +3,7 @@ from contextlib import contextmanager
 
 @contextmanager
 def add_to_sys_path(directory):
+    directory = str(directory)  # just in case it's a Path and not a str.
     import sys
     sys.path.insert(0, directory)
     try:
@@ -33,11 +34,12 @@ class _JitStateInfo:
             from pathlib import Path
             import tempfile
             if dir_type == 'cache':
-                directory = Path(tempfile.gettempdir()) / 'cython_jit_temp'
-            elif dir_type == 'temp':
                 directory = Path(tempfile.gettempdir()) / 'cython_jit'
+            elif dir_type == 'temp':
+                directory = Path(tempfile.gettempdir()) / 'cython_jit_temp'
             else:
                 raise AssertionError('Unexpected dir type: %s' % (dir_type,))
+            self.set_dir(dir_type, directory)
         return directory
 
     def get_cached(self, collector):
@@ -57,9 +59,12 @@ class _JitStateInfo:
             collector.key
             collector.func
 
-    def compile_collected(self):
+    def compile_collected(self, silent=False):
         from collections import defaultdict
         from pathlib import Path
+        from cython_jit.compile_with_cython import compile_with_cython
+        import cython_jit
+
         pyd_name_to_collectors = defaultdict(list)
         for collector in self.all_collectors.values():
             if collector.collected_info:
@@ -86,8 +91,8 @@ class _JitStateInfo:
 
                 # Remove decorators too
                 func_first_line = collector.func_first_line
-                print('func_first_line', func_first_line)
-                while original_lines[func_first_line].startswith('def') or original_lines[func_first_line].startswith('@'):
+                while original_lines[func_first_line].startswith('def') or \
+                        original_lines[func_first_line].startswith('@'):
                     func_first_line -= 1
 
                 original_lines[func_first_line:collector.func_last_line] = info_to_apply.func_lines
@@ -95,9 +100,17 @@ class _JitStateInfo:
 
             original_lines = sorted(import_lines) + original_lines
 
-            print('\n'.join(original_lines))
+            pyd_name = first_collector.get_pyd_name()
 
-        raise AssertionError('todo')
+            target_dir = cython_jit.get_cache_dir()
+            temp_dir = cython_jit.get_temp_dir()
+
+            for filepath in target_dir.iterdir():
+                if filepath.name.startswith(pyd_name):
+                    filepath.unlink()
+
+            compile_with_cython(
+                pyd_name, '\n'.join(original_lines), temp_dir, target_dir, silent=silent)
 
 
 def _get_jit_state_info():

@@ -56,9 +56,12 @@ class CythonJitInfoCollector(object):
                     if start_indent is not None:
                         if line.strip():
                             if get_line_indent(line) <= start_indent:
+                                i_line -= 1
                                 break
 
                         func_lines.append(line)
+                else:
+                    i_line += 1
 
             self._last_line = i_line + func_first_line + 1
 
@@ -84,7 +87,7 @@ class CythonJitInfoCollector(object):
         return self._return_type != self.RETURN_NOT_COLLECTED
 
     def get_pyd_name(self):
-        return self.func.__module__.replace('.', '_') + 'cyjit'
+        return self.func.__module__.replace('.', '_') + '_cyjit'
 
     def _check_jit_stage_collect(self):
         if self._jit_stage not in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):

@@ -62,6 +62,9 @@ def set_cache_dir(directory):
 
 
 def get_cache_dir():
+    '''
+    :return pathlib.Path.
+    '''
     from cython_jit._jit_state_info import _get_jit_state_info
     return _get_jit_state_info().get_dir('cache')
 
@@ -75,6 +78,9 @@ def set_temp_dir(directory):
 
 
 def get_temp_dir():
+    '''
+    :return pathlib.Path.
+    '''
     from cython_jit._jit_state_info import _get_jit_state_info
     return _get_jit_state_info().get_dir('temp')
 
