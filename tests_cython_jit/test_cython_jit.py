@@ -66,6 +66,29 @@ def test_cython_jit(tmpdir):
             _check_cython_jit(func, expected, tmpdir.join(func.__name__))
 
 
+def test_cython_jit_ifdef(tmpdir):
+    from cython_jit import JitStage, set_jit_stage
+    from cython_jit._jit_state_info import _get_jit_state_info
+
+    with set_jit_stage(JitStage.collect_info):
+        from tests_cython_jit._to_cython3 import my_func
+        assert my_func(2) == 4
+
+        all_collectors = _get_jit_state_info().all_collectors
+        collector = all_collectors[my_func.__name__]  # : :type collector: CythonJitInfoCollector
+        generated_info = collector.generate()
+        assert [x.rstrip() for x in generated_info.func_lines if x.strip()] == [
+            'def my_func_cy_wrapper(int64_t bar) -> int64_t:',
+            '    return my_func(bar)',
+            'cdef int64_t my_func(int64_t bar):',
+            '    # IFDEF CYTHON -- DONT EDIT THIS FILE (it is automatically generated)',
+            '    cdef Py_ssize_t x',
+            '    # ENDIF',
+            '    x = 1',
+            '    return bar + x + 1',
+        ]
+
+
 def _check_cython_jit(func, expected, tmpdir):
     from cython_jit.compile_with_cython import compile_with_cython
     from cython_jit._jit_state_info import add_to_sys_path

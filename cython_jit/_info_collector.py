@@ -16,6 +16,46 @@ class CythonJitInfoCollector(object):
 
     RETURN_NOT_COLLECTED = 'RETURN_NOT_COLLECTED'
 
+    def _fix_cython_ifdefs(self, func_lines):
+        state = 'regular'
+        new_contents = []
+        for line in func_lines:
+            strip = line.strip()
+            if state == 'regular':
+                if strip == '# IFDEF CYTHON':
+                    state = 'cython'
+
+                    new_contents.append(
+                        '%s -- DONT EDIT THIS FILE (it is automatically generated)\n' %
+                        line.replace('\n', '').replace('\r', ''))
+                    continue
+
+                new_contents.append(line)
+
+            elif state == 'cython':
+                if strip == '# ELSE':
+                    state = 'nocython'
+                    new_contents.append(line)
+                    continue
+
+                elif strip == '# ENDIF':
+                    state = 'regular'
+                    new_contents.append(line)
+                    continue
+
+                assert strip.startswith('#'), 'Line inside # IFDEF CYTHON must start with "# ".'
+                new_contents.append(line.replace('# ', '', 1))
+
+            elif state == 'nocython':
+                if strip == '# ENDIF':
+                    state = 'regular'
+                    new_contents.append(line)
+                    continue
+                new_contents.append('# %s' % line)
+
+        assert state == 'regular', 'Error: # IFDEF CYTHON found without # ENDIF'
+        return new_contents
+
     def __init__(self, func, nogil, jit_stage):
         import hashlib
         import inspect
@@ -66,7 +106,9 @@ class CythonJitInfoCollector(object):
 
             self._last_line = i_line + func_first_line + 1
 
+            func_lines = self._fix_cython_ifdefs(func_lines)
             assert func_lines
+
             self._func_lines = tuple(func_lines)
             self._return_type = self.RETURN_NOT_COLLECTED
 
@@ -162,6 +204,10 @@ class CythonJitInfoCollector(object):
         args = []
         for arg in self._sig.parameters:
             args.append('%s %s' % (self._get_arg_type(arg), arg))
+
+        # Add:
+        # @cython.boundscheck(False) # turn off bounds-checking for entire function
+        # @cython.wraparound(False)  # turn off negative index wrapping for entire function
 
         return 'cdef %(ret_type)s %(func_name)s(%(args)s)%(nogil)s:' % (dict(
             ret_type=self.get_cython_ret_type(),
