@@ -117,8 +117,11 @@ class _JitStateInfo:
                 collectors, key=lambda collector:-collector.func_first_line)
 
             import_lines = set()
+
+            keys_collected = {}
             for collector in collectors:
                 info_to_apply = collector.generate()
+                keys_collected[collector.func.__name__] = collector.key
 
                 # Remove decorators too
                 func_first_line = collector.func_first_line
@@ -129,7 +132,15 @@ class _JitStateInfo:
                 original_lines[func_first_line:collector.func_last_line] = info_to_apply.func_lines
                 import_lines.update(info_to_apply.c_import_lines)
 
-            original_lines = sorted(import_lines) + original_lines
+            cython_jit_key_matches_method = '''
+_keys_collected = %(keys_collected)r
+def cython_jit_key_matches(func_name, key):
+    return _keys_collected.get(func_name) == key
+''' % dict(keys_collected=keys_collected)
+
+            original_lines = sorted(import_lines) + \
+                [x.rstrip() for x in cython_jit_key_matches_method.splitlines()] + \
+                original_lines
 
             pyd_name = first_collector.get_pyd_name()
 
