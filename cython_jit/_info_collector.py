@@ -63,8 +63,8 @@ class CythonJitInfoCollector(object):
         self._c_imports = set()
 
         all_collectors = _get_jit_state_info().all_collectors
-        assert func.__name__ not in all_collectors, 'There is already a function named: %s' % (
-            func.__name__,)
+        assert func.__name__ not in all_collectors, 'There is already a function named: %s from file: %s' % (
+            func.__name__, func.__code__.co_filename)
 
         self._func = func
         self._nogil = nogil
