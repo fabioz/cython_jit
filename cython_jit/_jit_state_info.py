@@ -95,6 +95,7 @@ class _JitStateInfo:
         from cython_jit.compile_with_cython import compile_with_cython
         import cython_jit
         import importlib
+        from ._info_collector import fix_cython_ifdefs
 
         pyd_name_to_collectors = defaultdict(list)
         for collector in self.all_collectors.values():
@@ -110,7 +111,7 @@ class _JitStateInfo:
                 raise RuntimeError('Expected: %s to exist.' % (filepath,))
 
             with filepath.open() as stream:
-                original_lines = [x.rstrip() for x in stream.readlines()]
+                original_lines = fix_cython_ifdefs([x.rstrip() for x in stream.readlines()])
 
             # We must apply bottom to top so that lines are correct.
             collectors = sorted(

@@ -12,49 +12,54 @@ def get_line_indent(line):
 _GeneratedInfo = namedtuple('_GeneratedInfo', 'func_lines, c_import_lines')
 
 
+class InfoNotCollectedError(RuntimeError):
+    pass
+
+
+def fix_cython_ifdefs(func_lines):
+    state = 'regular'
+    new_contents = []
+    for line in func_lines:
+        strip = line.strip()
+        if state == 'regular':
+            if strip == '# IFDEF CYTHON':
+                state = 'cython'
+
+                new_contents.append(
+                    '%s -- DONT EDIT THIS FILE (it is automatically generated)\n' %
+                    line.replace('\n', '').replace('\r', ''))
+                continue
+
+            new_contents.append(line)
+
+        elif state == 'cython':
+            if strip == '# ELSE':
+                state = 'nocython'
+                new_contents.append(line)
+                continue
+
+            elif strip == '# ENDIF':
+                state = 'regular'
+                new_contents.append(line)
+                continue
+
+            assert strip.startswith('#'), 'Line inside # IFDEF CYTHON must start with "# ".'
+            new_contents.append(line.replace('# ', '', 1))
+
+        elif state == 'nocython':
+            if strip == '# ENDIF':
+                state = 'regular'
+                new_contents.append(line)
+                continue
+            new_contents.append('# %s' % line)
+
+    assert state == 'regular', 'Error: # IFDEF CYTHON found without # ENDIF'
+    return new_contents
+
+
 class CythonJitInfoCollector(object):
 
     RETURN_NOT_COLLECTED = 'RETURN_NOT_COLLECTED'
-
-    def _fix_cython_ifdefs(self, func_lines):
-        state = 'regular'
-        new_contents = []
-        for line in func_lines:
-            strip = line.strip()
-            if state == 'regular':
-                if strip == '# IFDEF CYTHON':
-                    state = 'cython'
-
-                    new_contents.append(
-                        '%s -- DONT EDIT THIS FILE (it is automatically generated)\n' %
-                        line.replace('\n', '').replace('\r', ''))
-                    continue
-
-                new_contents.append(line)
-
-            elif state == 'cython':
-                if strip == '# ELSE':
-                    state = 'nocython'
-                    new_contents.append(line)
-                    continue
-
-                elif strip == '# ENDIF':
-                    state = 'regular'
-                    new_contents.append(line)
-                    continue
-
-                assert strip.startswith('#'), 'Line inside # IFDEF CYTHON must start with "# ".'
-                new_contents.append(line.replace('# ', '', 1))
-
-            elif state == 'nocython':
-                if strip == '# ENDIF':
-                    state = 'regular'
-                    new_contents.append(line)
-                    continue
-                new_contents.append('# %s' % line)
-
-        assert state == 'regular', 'Error: # IFDEF CYTHON found without # ENDIF'
-        return new_contents
 
     def __init__(self, func, nogil, jit_stage):
         import hashlib
@@ -106,7 +111,7 @@ class CythonJitInfoCollector(object):
 
             self._last_line = i_line + func_first_line + 1
 
-            func_lines = self._fix_cython_ifdefs(func_lines)
+            func_lines = fix_cython_ifdefs(func_lines)
             assert func_lines
 
             self._func_lines = tuple(func_lines)
@@ -139,7 +144,7 @@ class CythonJitInfoCollector(object):
     def generate(self):
         self._check_jit_stage_collect()
         if not self.collected_info():
-            raise RuntimeError('No info was collected for: %s' % (self.func))
+            raise InfoNotCollectedError('No info was collected for: %s in file: %s' % (self.func, self.func.__code__.co_filename))
 
         generated_func_lines = []
         generated_c_import_lines = set()
@@ -186,18 +191,19 @@ class CythonJitInfoCollector(object):
             self._collect_arg(arg_name, arg_value)
 
     def _collect_arg(self, arg_name, arg_value):
-        self._arg_name_to_arg_type[arg_name] = type(arg_value)
+        self._arg_name_to_arg_type[arg_name] = self._translate_type(arg_name, arg_value)
 
     def collect_return(self, ret):
         self._check_jit_stage_collect()
-        self._return_type = type(ret)
+        if self._sig.return_annotation:
+            return self._sig.return_annotation
+        self._return_type = self._translate_type('return value', ret)
 
     def _get_arg_type(self, arg_name):
         ann = self._sig.parameters[arg_name].annotation
         if isinstance(ann, str):
             return ann
-        arg_type = self._arg_name_to_arg_type[arg_name]
-        return self._translate_type(arg_type)
+        return self._arg_name_to_arg_type[arg_name]
 
     def get_def_line(self):
         self._check_jit_stage_collect()
@@ -242,15 +248,45 @@ class CythonJitInfoCollector(object):
         self._check_jit_stage_collect()
         return sorted(self._c_imports)
 
-    def _translate_type(self, arg_type):
-        if arg_type == int:
-            ret = 'int64_t'
-        else:
-            raise AssertionError('Unhandled: %s' % (arg_type,))
+    def _translate_type(self, arg_name, value):
+        import numpy
+        if type(value) == numpy.int32:
+            ret = 'int32_t'
+            self._c_imports.add('from libc.stdint cimport %s' % (ret,))
 
-        self._c_imports.add('from libc.stdint cimport %s' % (ret,))
+        elif type(value) == numpy.uint32:
+            ret = 'uint32_t'
+            self._c_imports.add('from libc.stdint cimport %s' % (ret,))
+
+        elif isinstance(value, (int, numpy.int64)):
+            ret = 'int64_t'
+            self._c_imports.add('from libc.stdint cimport %s' % (ret,))
+
+        elif isinstance(value, float):
+            ret = 'double'
+
+        elif value is None:
+            return 'void'
+
+        elif isinstance(value, numpy.ndarray):
+            if value.dtype == numpy.uint32:
+                dtype_str = 'uint32_t'
+            elif value.dtype == numpy.uint8:
+                dtype_str = 'uint8_t'
+            else:
+                raise AssertionError('Unhandled %s: %s' % (arg_name, value.dtype,))
+
+            self._c_imports.add('from libc.stdint cimport %s' % (dtype_str,))
+            return '%s[%s]' % (dtype_str, ','.join([':'] * value.ndim))
+
+        elif value.__class__.__name__ == self._sig.return_annotation:
+            return value.__class__.__name__
+
+        else:
+            raise AssertionError('Unhandled %s: %s (%s)' % (arg_name, type(value), value))
+
         return ret
 
     def get_cython_ret_type(self):
         self._check_jit_stage_collect()
-        return self._translate_type(self._return_type)
+        return self._return_type
