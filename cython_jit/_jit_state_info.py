@@ -1,3 +1,4 @@
+from collections import namedtuple
 from contextlib import contextmanager
 
 
@@ -12,6 +13,20 @@ def add_to_sys_path(directory):
         sys.path.remove(directory)
 
 
+class _EraseHelper(object):
+
+    def __init__(self):
+        self._removed = set()
+
+    def remove(self, filepath):
+        if filepath not in self._removed:
+            self._removed.add(filepath)
+            try:
+                filepath.unlink()
+            except OSError:
+                pass
+
+
 class _JitStateInfo:
 
     def __init__(self):
@@ -19,6 +34,8 @@ class _JitStateInfo:
         self.stage = JitStage.use_compiled
         self._dirs = {}
         self.all_collectors = {}
+        self._erase_helper = _EraseHelper()
+        self._pyd_name_to_module = {}
 
     def set_dir(self, dir_type, directory):
         assert dir_type in ('cache', 'temp')
@@ -48,22 +65,36 @@ class _JitStateInfo:
         '''
         import importlib
         pyd_name = collector.get_pyd_name()
-        cache_dir = self.get_dir('cache')
 
-        with add_to_sys_path(cache_dir):
-            try:
-                mod = importlib.import_module(pyd_name)
-            except ImportError:
-                return None
+        module = self._pyd_name_to_module.get(pyd_name)
+        if module is not None:
+            return getattr(module, collector.get_func_wrappr_name())
 
-            collector.key
-            collector.func
+        target_dir = self.get_dir('cache')
+
+        pyd_info = self._get_pyd_info_from_dir(pyd_name, target_dir)
+        if pyd_info.latest_pyd_name:
+            with add_to_sys_path(target_dir):
+                try:
+                    module = importlib.import_module(pyd_info.latest_pyd_name)
+                except ImportError:
+                    return None
+
+                try:
+                    ret = getattr(module, collector.get_func_wrappr_name())
+                except AttributeError:
+                    return None
+                else:
+                    if module.cython_jit_key_matches(collector.func.__name__, collector.key):
+                        self._pyd_name_to_module[pyd_name] = module
+                        return ret
 
     def compile_collected(self, silent=False):
         from collections import defaultdict
         from pathlib import Path
         from cython_jit.compile_with_cython import compile_with_cython
         import cython_jit
+        import importlib
 
         pyd_name_to_collectors = defaultdict(list)
         for collector in self.all_collectors.values():
@@ -105,12 +136,53 @@ class _JitStateInfo:
             target_dir = cython_jit.get_cache_dir()
             temp_dir = cython_jit.get_temp_dir()
 
-            for filepath in target_dir.iterdir():
-                if filepath.name.startswith(pyd_name):
-                    filepath.unlink()
+            pyd_info = self._get_pyd_info_from_dir(pyd_name, target_dir)
 
             compile_with_cython(
-                pyd_name, '\n'.join(original_lines), temp_dir, target_dir, silent=silent)
+                pyd_info.next_pyd_name, '\n'.join(original_lines), temp_dir, target_dir, silent=silent)
+
+            with add_to_sys_path(target_dir):
+                self._pyd_name_to_module[pyd_name] = importlib.import_module(pyd_info.next_pyd_name)
+
+    def _get_pyd_info_from_dir(self, pyd_name, target_dir):
+        # pyd_name is something as: tests_cython_jit__to_cython2_cyjit
+        # file name is something as: tests_cython_jit__to_cython2_cyjit.cp36-win_amd64.pyd
+        found_paths = set()
+        existing_pyd_names_to_filepath = {}
+        latest_pyd_name = None
+        for filepath in target_dir.iterdir():
+            if filepath.name.startswith(pyd_name):
+                found_paths.add(filepath)
+                existing_pyd_names_to_filepath[filepath.name.split('.')[0]] = filepath
+
+        next_pyd_name = pyd_name
+        if existing_pyd_names_to_filepath:
+            version_to_pyd_name = {}
+
+            # Find the latest version compiled
+            for existing_pyd_name in existing_pyd_names_to_filepath:
+                if existing_pyd_name == pyd_name:
+                    version_to_pyd_name[0] = existing_pyd_name
+                else:
+                    try:
+                        version_to_pyd_name[int(existing_pyd_name[len(pyd_name) + 1:])] = existing_pyd_name
+                    except ValueError:
+                        continue
+
+            last_version = max(version_to_pyd_name.keys())
+            next_pyd_name = '%s_%04d' % (pyd_name, last_version + 1)
+            latest_pyd_name = version_to_pyd_name[last_version]
+
+            for _version, existing_pyd_name in sorted(version_to_pyd_name.items())[:-1]:
+                self._erase_helper.remove(existing_pyd_names_to_filepath[existing_pyd_name])
+
+        return _PydInfo(
+            next_pyd_name=next_pyd_name,
+            existing_pyd_names=list(existing_pyd_names_to_filepath.keys()),
+            latest_pyd_name=latest_pyd_name)
+
+
+_PydInfo = namedtuple('_PydInfo', 'next_pyd_name, existing_pyd_names, latest_pyd_name')
 
 
 def _get_jit_state_info():
@@ -146,5 +218,6 @@ def _set_jit_state_info(jit_state_info):
         with _set_jit_state_info(temp_info):
             ...
     '''
+    _get_jit_state_info._jit_state_info = jit_state_info
     prev = _get_jit_state_info()
     return _RestoreJitStateInfo(prev)

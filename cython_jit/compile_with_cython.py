@@ -1,5 +1,5 @@
-import os
 from contextlib import contextmanager
+import os
 
 
 @contextmanager
@@ -73,3 +73,4 @@ setup(
                 raise CalledProcessError(process.returncode, args)
         else:
             subprocess.check_call(args, env=env, **kwargs)
+

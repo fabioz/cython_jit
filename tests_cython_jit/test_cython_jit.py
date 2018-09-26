@@ -1,23 +1,31 @@
 
 
-import pytest
+from contextlib import contextmanager
 
-# Need to investigate: it seems that after compiling we no longer have permissions to removing
-# a file!
-# import os
-# os.remove('C:\\Users\\fabio\\AppData\\Local\\Temp\\cython_jit\\tests_cython_jit__to_cython2_cyjit.cp36-win_amd64.pyd')
+import pytest
 
 
 @pytest.fixture(scope='function', autouse=True)
-def _set_new_state_info():
+def _set_new_state_info_fixture(tmpdir):
     '''
     Each test gets a new state info.
     '''
-    from cython_jit._jit_state_info import _set_jit_state_info
+    with _set_new_state_info(tmpdir):
+        pass
+
+
+@contextmanager
+def _set_new_state_info(tmpdir):
+    from cython_jit import set_cache_dir
+    from cython_jit import set_temp_dir
     from cython_jit._jit_state_info import _JitStateInfo
+    from cython_jit._jit_state_info import _set_jit_state_info
+    from pathlib import Path
 
     jit_state_info = _JitStateInfo()
     with _set_jit_state_info(jit_state_info):
+        set_cache_dir(Path(str(tmpdir.join('cache'))))
+        set_temp_dir(Path(str(tmpdir.join('tmp'))))
         yield
 
 
@@ -130,11 +138,16 @@ def test_cache_working(tmpdir):
         assert all_collectors['my_func5'].func_first_line == 14
         assert all_collectors['my_func5'].func_last_line == 16
 
-        _get_jit_state_info().compile_collected()
+        _get_jit_state_info().compile_collected(silent=True)
     all_collectors.clear()
 
     # Use compiled version.
     with set_jit_stage(JitStage.use_compiled):
+        _to_cython2_reloaded = reload(_to_cython2)
+        _to_cython2_reloaded.my_func3(1)
+
+    # Now, use a new info (so, we'll be forced to load it again).
+    with _set_new_state_info(tmpdir):
         _to_cython2_reloaded = reload(_to_cython2)
         _to_cython2_reloaded.my_func3(1)
 

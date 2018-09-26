@@ -1,5 +1,6 @@
 from collections import namedtuple
 from contextlib import contextmanager
+import sys
 
 from cython_jit import JitStage
 
@@ -87,7 +88,7 @@ class CythonJitInfoCollector(object):
         return self._return_type != self.RETURN_NOT_COLLECTED
 
     def get_pyd_name(self):
-        return self.func.__module__.replace('.', '_') + '_cyjit'
+        return self.func.__module__.replace('.', '_') + '_cyjit' + ''.join(str(x) for x in sys.version_info[:2])
 
     def _check_jit_stage_collect(self):
         if self._jit_stage not in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
@@ -180,12 +181,16 @@ class CythonJitInfoCollector(object):
         d = dict(
             ret_type=self.get_cython_ret_type(),
             func_name=self.func.__name__,
+            func_wrapper_name=self.get_func_wrappr_name(),
             args=', '.join(args),
             call_args=', '.join(call_args),
         )
-        def_line = 'def %(func_name)s_cy_wrapper(%(args)s) -> %(ret_type)s:' % (d)
+        def_line = 'def %(func_wrapper_name)s(%(args)s) -> %(ret_type)s:' % (d)
 
         return [def_line, '    return %(func_name)s(%(call_args)s)' % d]
+
+    def get_func_wrappr_name(self):
+        return '%s_cy_wrapper' % (self.func.__name__,)
 
     def get_c_import_lines(self):
         self._check_jit_stage_collect()
