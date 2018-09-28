@@ -195,9 +195,10 @@ class CythonJitInfoCollector(object):
 
     def collect_return(self, ret):
         self._check_jit_stage_collect()
-        if self._sig.return_annotation:
-            return self._sig.return_annotation
-        self._return_type = self._translate_type('return value', ret)
+        if self._sig.return_annotation and self._sig.return_annotation != self._sig.empty:
+            self._return_type = self._sig.return_annotation
+        else:
+            self._return_type = self._translate_type('return value', ret)
 
     def _get_arg_type(self, arg_name):
         ann = self._sig.parameters[arg_name].annotation
