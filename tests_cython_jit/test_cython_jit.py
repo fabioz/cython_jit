@@ -175,6 +175,26 @@ def test_cache_working(tmpdir):
         _to_cython2_reloaded.my_func3(1)
 
 
+def test_compile_numpy_arrays(tmpdir):
+    from cython_jit import JitStage, set_jit_stage
+    from importlib import reload
+
+    from cython_jit._jit_state_info import _get_jit_state_info
+
+    with set_jit_stage(JitStage.collect_info):
+        from tests_cython_jit import _to_cython_numpy_arrays
+        import numpy
+        pixels_array = numpy.zeros(shape=(5, 2), dtype=numpy.uint32)
+        result = numpy.zeros_like(pixels_array, dtype=numpy.uint8)
+        _to_cython_numpy_arrays.check_parameters(pixels_array, 0, 0, 0, result, 0.8)
+        _get_jit_state_info().compile_collected(silent=False)
+
+    # Use compiled version.
+    with set_jit_stage(JitStage.use_compiled):
+        _to_cython_numpy_arrays_reloaded = reload(_to_cython_numpy_arrays)
+        _to_cython_numpy_arrays_reloaded.check_parameters(pixels_array, 0, 0, 0, result, 0.8)
+
+
 def test_compile_with_cython(tmpdir):
     from cython_jit.compile_with_cython import compile_with_cython
     from cython_jit._jit_state_info import add_to_sys_path

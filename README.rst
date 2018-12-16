@@ -31,6 +31,15 @@ To install it use:
 
 ``pip install cython_jit``
 
+
+How to use
+------------
+
+The idea of cython_jit is automatically compiling a method using cython gathering runtime
+information on the parameters for the function being called.
+
+It's still a work in progress...
+
 License
 ==========
 

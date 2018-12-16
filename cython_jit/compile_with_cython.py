@@ -1,5 +1,5 @@
-from contextlib import contextmanager
 import os
+from contextlib import contextmanager
 
 
 @contextmanager
@@ -13,7 +13,7 @@ def working_directory(path):
         os.chdir(prev_cwd)
 
 
-def compile_with_cython(module_name, module_contents, temp_dir, target_dir, silent=False):
+def compile_with_cython(module_name, module_contents, temp_dir, target_dir, silent=False, debug=False):
     import json
     import os.path
     import subprocess
@@ -29,16 +29,28 @@ def compile_with_cython(module_name, module_contents, temp_dir, target_dir, sile
     with pyx_file.open('w') as stream:
         stream.write(module_contents)
 
+    debug_options = ''
+    if debug:
+        debug_options = '''
+for extension in ext_modules:
+    extension.extra_compile_args.extend(["-Zi", "/Od"])
+    extension.extra_link_args.extend(["-debug"])
+'''
+
     setup_template = '''
 from Cython.Build import cythonize
 from distutils.core import setup
 
 ext_modules = %(ext_modules)s
+ext_modules = cythonize(ext_modules)
+%(debug_options)s
+
 setup(
     name='Cythonize',
-    ext_modules=cythonize(ext_modules),
+    ext_modules=ext_modules,
 )
 ''' % dict(
+    debug_options=debug_options,
     ext_modules=json.dumps([str(pyx_file)]),
     )
 
@@ -73,4 +85,3 @@ setup(
                 raise CalledProcessError(process.returncode, args)
         else:
             subprocess.check_call(args, env=env, **kwargs)
-

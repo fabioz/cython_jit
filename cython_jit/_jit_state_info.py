@@ -89,7 +89,7 @@ class _JitStateInfo:
                         self._pyd_name_to_module[pyd_name] = module
                         return ret
 
-    def compile_collected(self, silent=False):
+    def compile_collected(self, silent=False, debug=False):
         from collections import defaultdict
         from pathlib import Path
         from cython_jit.compile_with_cython import compile_with_cython
@@ -151,7 +151,7 @@ def cython_jit_key_matches(func_name, key):
             pyd_info = self._get_pyd_info_from_dir(pyd_name, target_dir)
 
             compile_with_cython(
-                pyd_info.next_pyd_name, '\n'.join(original_lines), temp_dir, target_dir, silent=silent)
+                pyd_info.next_pyd_name, '\n'.join(original_lines), temp_dir, target_dir, silent=silent, debug=debug)
 
             with add_to_sys_path(target_dir):
                 self._pyd_name_to_module[pyd_name] = importlib.import_module(pyd_info.next_pyd_name)
