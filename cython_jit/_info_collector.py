@@ -1,6 +1,6 @@
+import sys
 from collections import namedtuple
 from contextlib import contextmanager
-import sys
 
 from cython_jit import JitStage
 
@@ -188,6 +188,11 @@ class CythonJitInfoCollector(object):
         self._check_jit_stage_collect()
         bound_arguments = self._sig.bind(*args, **kwargs)
         for arg_name, arg_value in bound_arguments.arguments.items():
+            ann = self._sig.parameters[arg_name].annotation
+            if isinstance(ann, str):
+                # Don't collect if it's already annotated.
+                continue
+
             self._collect_arg(arg_name, arg_value)
 
     def _collect_arg(self, arg_name, arg_value):

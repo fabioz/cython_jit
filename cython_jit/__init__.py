@@ -97,10 +97,23 @@ def jit(nogil=False):
 
             @wraps(func)
             def actual_method(*args, **kwargs):
-                collector.collect_args(args, kwargs)
-                ret = func(*args, **kwargs)
-                collector.collect_return(ret)
-                return ret
+                # Get the new stage as it could've changed.
+                stage = get_jit_stage()
+                if stage in (JitStage.collect_info_and_compile_at_exit, JitStage.collect_info):
+                    collector.collect_args(args, kwargs)
+                    ret = func(*args, **kwargs)
+                    collector.collect_return(ret)
+                    return ret
+
+                elif stage == JitStage.use_compiled:
+                    # Stage changed to use compiled!
+                    cached = jit_state_info.get_cached(collector)
+                    if cached is None:
+                        raise ModuleNotCachedError('Unable to find cython-compiled module for: %s' % (func,))
+                    return cached(*args, **kwargs)
+
+                else:
+                    raise AssertionError('TODO')
 
             return actual_method
 

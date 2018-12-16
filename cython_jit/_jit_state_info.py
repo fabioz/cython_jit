@@ -143,6 +143,8 @@ def cython_jit_key_matches(func_name, key):
                 [x.rstrip() for x in cython_jit_key_matches_method.splitlines()] + \
                 original_lines
 
+            original_lines = ['# cython: language_level=3'] + original_lines
+
             pyd_name = first_collector.get_pyd_name()
 
             target_dir = cython_jit.get_cache_dir()
