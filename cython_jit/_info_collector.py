@@ -26,7 +26,7 @@ def fix_cython_ifdefs(func_lines):
                 state = 'cython'
 
                 new_contents.append(
-                    '%s -- DONT EDIT THIS FILE (it is automatically generated)\n' %
+                    '%s -- DONT EDIT THIS FILE (it is automatically generated)\n' % 
                     line.replace('\n', '').replace('\r', ''))
                 continue
 
@@ -81,7 +81,7 @@ class CythonJitInfoCollector(object):
         self._sig = inspect.signature(func)
         m.update(str(self._sig).encode('utf-8'))
         if nogil:
-            m.update(b'nogil')
+            m.update(b'noexcept nogil')
         key = m.hexdigest()
 
         # If the key is not the same the function must be recompiled.
@@ -225,7 +225,7 @@ class CythonJitInfoCollector(object):
             ret_type=self.get_cython_ret_type(),
             func_name=self.func.__name__,
             args=', '.join(args),
-            nogil=' nogil' if self.nogil else ''
+            nogil=' noexcept nogil' if self.nogil else ''
             ))
 
     def get_wrapper_func_lines(self):
